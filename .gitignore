@@ -1,0 +1,9 @@
+__pycache__/
+.venv/
+.pytest_cache/
+.ruff_cache/
+.env
+*.log
+indices/
+# Lockfile carries sibling path metadata; do not publish local provenance.
+uv.lock
