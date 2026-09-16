@@ -5,7 +5,7 @@ same catalog, same strict judge; pick the backend and inspect exactly what it de
 
 | Backend | Sibling | Runtime | Default model (2026-09-16) | Prompt shown in the UI |
 |---|---|---|---|---|
-| `lora` | `../feln-lora` | llama-server, GGUF, JSON-schema grammar | `runs/nemotron-mac-v2-20260916/lora` (Nemotron-3-Nano-4B LoRA v2, Q8_0) | the trained prompt prefix |
+| `lora` | `../feln-lora` | llama-server, GGUF, JSON-schema grammar | `runs/nemotron-mac-v2-20260916/qlora` (Nemotron-3-Nano-4B QLoRA v2, Q8_0) | the trained prompt prefix |
 | `liquid` | `../feln-liquid` | `mlx_lm.server`, chat template | `models/LFM2.5-1.2B-Instruct` + `artifacts/northsea-normalized-20260916/best` | the run's `system.txt` + `predict_feln.RULES` |
 | `rag` | `../feln-rag` | sentence-transformers retrieval + litellm | `LLM_MODEL_NAME` (any litellm id) · `local:multi-qa-mpnet-base-dot-v1` | system prompt & catalog |
 
@@ -35,7 +35,7 @@ Open <http://127.0.0.1:8766/>. `--start` launches `llama-server` (port 8092) and
 Without `--start`, run them yourself:
 
 ```bash
-llama-server -m ../feln-lora/runs/nemotron-mac-v2-20260916/lora/gguf/nemotron-4b-v2-lora-q8_0.gguf \
+llama-server -m ../feln-lora/runs/nemotron-mac-v2-20260916/qlora/gguf/nemotron-4b-v2-qlora-q8_0.gguf \
   -c 2048 -np 1 -ngl all --host 127.0.0.1 --port 8092
 mlx_lm.server --model ../feln-liquid/models/LFM2.5-1.2B-Instruct \
   --adapter-path ../feln-liquid/artifacts/northsea-normalized-20260916/best --port 8093
@@ -46,14 +46,14 @@ warning. `--help` lists the per-backend paths, all defaulting to the sibling che
 RAG generation is any litellm model (`--rag-model` or `LLM_MODEL_NAME`); retrieval is
 `--rag-encoder local:<sentence-transformer>` (on-device) or `litellm:<embedding model>`.
 Vectors are cached per corpus + encoder under `indices/`.
-`--llama LABEL=BUNDLE=URL` registers any other served GGUF bundle, e.g. the QLoRA model next to
-the LoRA one; `--gold FILE` judges against other records (feln-lora's `tests/challenge.json`):
+`--llama LABEL=BUNDLE=URL` registers any other served GGUF bundle, e.g. the LoRA model next to
+the QLoRA one; `--gold FILE` judges against other records (feln-lora's `tests/challenge.json`):
 
 ```bash
-llama-server -m ../feln-lora/runs/nemotron-mac-v2-20260916/qlora/gguf/nemotron-4b-v2-qlora-q8_0.gguf \
+llama-server -m ../feln-lora/runs/nemotron-mac-v2-20260916/lora/gguf/nemotron-4b-v2-lora-q8_0.gguf \
   -c 2048 -np 1 -ngl all --host 127.0.0.1 --port 8094 &
 uv run --no-sync python -m feln_studio.server --start \
-  --llama "QLoRA v2 · Q8_0=../feln-lora/runs/nemotron-mac-v2-20260916/qlora/merged=http://127.0.0.1:8094" \
+  --llama "LoRA v2 · Q8_0=../feln-lora/runs/nemotron-mac-v2-20260916/lora/merged=http://127.0.0.1:8094" \
   --gold ../feln-lora/tests/challenge.json
 ```
 
