@@ -6,12 +6,17 @@ same catalog, same strict judge; pick the backend and inspect exactly what it de
 | Backend | Sibling | Runtime | Prompt shown in the UI |
 |---|---|---|---|
 | `lora` | `../feln-lora` | llama-server, GGUF, JSON-schema grammar | the trained prompt prefix |
-| `liquid` | `../feln-liquid` | `mlx_lm.server`, LFM2.5-1.2B + LoRA adapter | the run's `system.txt` |
+| `liquid` | `../feln-liquid` | `mlx_lm.server`, LFM2.5-1.2B + LoRA adapter | the run's `system.txt` + `predict_feln.RULES` |
 | `rag` | `../feln-rag` | sentence-transformers retrieval + litellm | system prompt & catalog |
 
 Every answer is schema-compiled through the catalog (`Layers.json`) and, when the question is
 a recorded one (`FELN.json`), judged with `FELN.same` against the compiled gold. The raw model
 text stays one click away.
+
+The liquid backend inherits feln-liquid's guarded inference (`predict_feln.py`, imported by
+path): its RULES ride on the system prompt, bare "depth" wording returns a clarification
+instead of a guess, and a validation failure earns one corrected turn (footer shows
+`2 attempts`). `--liquid-guard` points elsewhere; a missing file falls back to the plain prompt.
 
 ## Run
 
@@ -38,10 +43,10 @@ warning. `--help` lists the per-backend paths, all defaulting to the sibling che
 the LoRA one; `--gold FILE` judges against other records (feln-lora's `tests/challenge.json`):
 
 ```bash
-llama-server -m ../feln-lora/runs/nemotron-mac-qlora-20260916/gguf/nemotron-4b-qlora-step443-q8_0.gguf \
+llama-server -m ../feln-lora/runs/nemotron-mac-v2-20260916/qlora/gguf/nemotron-4b-v2-qlora-q8_0.gguf \
   -c 2048 -np 1 -ngl all --host 127.0.0.1 --port 8094 &
 uv run --no-sync python -m feln_studio.server --start \
-  --llama "QLoRA NF4 · Q8_0=../feln-lora/runs/nemotron-mac-qlora-20260916/merged=http://127.0.0.1:8094" \
+  --llama "QLoRA v2 · Q8_0=../feln-lora/runs/nemotron-mac-v2-20260916/qlora/merged=http://127.0.0.1:8094" \
   --gold ../feln-lora/tests/challenge.json
 ```
 

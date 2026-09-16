@@ -1,17 +1,22 @@
 """One contract over every FELN backend.
 
-`generate(query, prompt, ids)` returns the raw model text and the JSON object parsed from
-it; the server schema-compiles and judges. Backends never compare, never compile.
+`generate(query, prompt, ids)` returns the raw model text; the server parses, schema-compiles
+and judges. `retry(...)` may give the model one more turn with the validation error; backends
+never compare, never compile.
 """
 
 from __future__ import annotations
 
+import importlib.util
 import json
+import logging
 import re
 import urllib.error
 import urllib.request
 from pathlib import Path
 from threading import Lock
+
+log = logging.getLogger(__name__)
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTROL_TOKENS = ("<|im_start|>", "<|im_end|>", "<|endoftext|>", "<|startoftext|>")
@@ -54,6 +59,10 @@ def parse_json(raw: str) -> dict:
     return value
 
 
+class Clarification(ValueError):
+    """The question is ambiguous for this catalog; ask the user instead of guessing."""
+
+
 class Backend:
     key: str
     label: str
@@ -76,6 +85,12 @@ class Backend:
 
     def generate(self, query: str, prompt: str, ids: list[int] | None = None) -> dict:
         raise NotImplementedError
+
+    def retry(
+        self, query: str, prompt: str, raw: str, error: str, ids: list[int] | None
+    ) -> dict | None:
+        """One more turn after `raw` failed validation with `error`; None means no retry."""
+        return None
 
 
 class LlamaBackend(Backend):
@@ -117,26 +132,58 @@ class LlamaBackend(Backend):
         timings = result.get("timings", {})
         return {
             "raw": raw,
-            "parsed": parse_json(raw),
             "prompt_tokens": timings.get("prompt_n"),
             "generated_tokens": timings.get("predicted_n"),
             "first_token_seconds": timings.get("prompt_ms", 0) / 1000,
         }
 
 
+def load_guard(path: Path | None):
+    """feln-liquid's predict_feln.py: RULES appended to the system prompt and clarification().
+
+    Imported by path so the studio inherits guard changes instead of copying them; its
+    module level is stdlib-only (MLX loads inside main()).
+    """
+    if path is None or not path.is_file():
+        return None
+    spec = importlib.util.spec_from_file_location("feln_liquid_guard", path)
+    if spec is None or spec.loader is None:
+        return None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 class MlxBackend(Backend):
-    """feln-liquid MLX adapter behind mlx_lm.server: chat template, system prompt from the run."""
+    """feln-liquid MLX adapter behind mlx_lm.server: chat template, system prompt from the run.
+
+    With a guard module the prompt carries feln-liquid's inference RULES, bare "depth" wording
+    asks for clarification, and a validation failure earns one corrected turn.
+    """
 
     family = "mlx"
     prompt_label = "System prompt"
     decoding = "Greedy · chat template · MLX"
 
     def __init__(
-        self, key: str, label: str, system: Path, adapter: Path, url: str, max_tokens: int = 384
+        self,
+        key: str,
+        label: str,
+        system: Path,
+        adapter: Path,
+        url: str,
+        guard: Path | None = None,
+        max_tokens: int = 384,
     ):
         super().__init__()
         self.key, self.label, self.url = key, label, url.rstrip("/")
         self.prompt = system.read_text().rstrip("\n")
+        self.guard = load_guard(guard)
+        if self.guard is not None:
+            self.prompt += "\n" + self.guard.RULES
+            self.decoding += " · guarded"
+        elif guard is not None:
+            log.warning("liquid guard %s not found; plain system prompt", guard)
         self.adapter, self.max_tokens = adapter, max_tokens
         self.info = f"{shown(adapter)} → {self.url}"
 
@@ -146,7 +193,7 @@ class MlxBackend(Backend):
         except (urllib.error.URLError, OSError):
             return False
 
-    def generate(self, query: str, prompt: str, ids: list[int] | None = None) -> dict:
+    def chat(self, messages: list[dict]) -> dict:
         result = post(
             self.url + "/v1/chat/completions",
             {
@@ -154,10 +201,7 @@ class MlxBackend(Backend):
                 # mlx_lm 0.31 resolves default_model before the adapter lookup and drops
                 # --adapter-path; naming the adapter per request loads it for sure.
                 "adapters": str(self.adapter),
-                "messages": [
-                    {"role": "system", "content": prompt},
-                    {"role": "user", "content": query},
-                ],
+                "messages": messages,
                 "temperature": 0,
                 "max_tokens": self.max_tokens,
             },
@@ -169,11 +213,35 @@ class MlxBackend(Backend):
         usage = result.get("usage", {})
         return {
             "raw": raw,
-            "parsed": parse_json(raw),
             "prompt_tokens": usage.get("prompt_tokens"),
             "generated_tokens": usage.get("completion_tokens"),
             "first_token_seconds": None,
         }
+
+    def generate(self, query: str, prompt: str, ids: list[int] | None = None) -> dict:
+        if self.guard is not None and (question := self.guard.clarification(query)):
+            raise Clarification(question)
+        return self.chat(
+            [{"role": "system", "content": prompt}, {"role": "user", "content": query}]
+        )
+
+    def retry(
+        self, query: str, prompt: str, raw: str, error: str, ids: list[int] | None
+    ) -> dict | None:
+        if self.guard is None:
+            return None
+        return self.chat(
+            [
+                {"role": "system", "content": prompt},
+                {"role": "user", "content": query},
+                {"role": "assistant", "content": raw},
+                {
+                    "role": "user",
+                    "content": f"Validation failed: {error}. Correct the FELN using the catalog "
+                    "and original request. Return only JSON.",
+                },
+            ]
+        )
 
 
 class RagBackend(Backend):
@@ -216,4 +284,4 @@ class RagBackend(Backend):
         )
         shots = [{"text": e["text"], "meta": e["meta"]} for e in examples]
         _, raw, _ = generate(query, prompt, lambda q, k: shots, model=self.model)
-        return {"raw": raw, "parsed": parse_json(raw), "examples": examples}
+        return {"raw": raw, "examples": examples}

@@ -101,10 +101,19 @@ function showResult(result) {
   if (!result.valid) {
     output = raw = result.error;
     $("result-code").textContent = result.error;
+    $("copy").textContent = "Copy message";
+    if (result.clarification) {
+      $("result-badge").textContent = "NEEDS CLARIFICATION";
+      $("result-badge").className = "small-tag";
+      $("result-description").textContent = "QUESTION FOR YOU";
+      $("result-summary").textContent = "The backend will not guess. Rephrase with the intended field.";
+      $("result-footer-text").textContent = `No model call · ${current.label}`;
+      status("Rephrase the question and generate again.", "error");
+      return;
+    }
     $("result-badge").textContent = "INVALID OUTPUT";
     $("result-badge").className = "small-tag invalid";
     $("result-description").textContent = "DECODING ERROR";
-    $("copy").textContent = "Copy message";
     $("result-summary").textContent = "The backend did not produce a schema-valid FELN.";
     $("result-footer-text").textContent = `Failed after ${result.seconds.toFixed(2)} s · ${current.label}`;
     status("Decoding stopped before a valid FELN was produced.", "error");
@@ -122,6 +131,7 @@ function showResult(result) {
   if (result.generated_tokens != null) bits.unshift(`${result.generated_tokens} tokens`);
   if (result.first_token_seconds != null) bits.push(`first token ${result.first_token_seconds.toFixed(2)} s`);
   if (result.prompt_tokens != null) bits.push(`${result.prompt_tokens} prompt tokens`);
+  if (result.attempts > 1) bits.push(`${result.attempts} attempts`);
   bits.push(current.label);
   $("result-footer-text").textContent = bits.join(" · ");
 }

@@ -22,7 +22,7 @@ from typing import cast
 
 from dotenv import load_dotenv
 
-from .backends import ROOT, Backend, LlamaBackend, MlxBackend, RagBackend
+from .backends import ROOT, Backend, Clarification, LlamaBackend, MlxBackend, RagBackend, parse_json
 from .catalog import Gold, Schema, judge
 
 STATIC = Path(__file__).with_name("static")
@@ -63,10 +63,21 @@ class Studio:
     def generate(self, key: str, query: str, prompt: str | None, ids: list[int] | None) -> dict:
         backend = self.backends[key]
         started = time.monotonic()
+        prompt = backend.prompt if prompt is None else prompt
+        attempts = 1
         with backend.lock:
             try:
-                result = backend.generate(query, backend.prompt if prompt is None else prompt, ids)
-                feln = self.schema.compile(result["parsed"])
+                result = backend.generate(query, prompt, ids)
+                try:
+                    feln = self.schema.compile(parse_json(result["raw"]))
+                except ValueError as exc:
+                    again = backend.retry(query, prompt, result["raw"], str(exc), ids)
+                    if again is None:
+                        raise
+                    result, attempts = again, 2
+                    feln = self.schema.compile(parse_json(result["raw"]))
+            except Clarification as exc:
+                return {"valid": False, "clarification": True, "error": str(exc), "seconds": 0}
             except (ValueError, OSError) as exc:  # OSError: local model server unreachable
                 return {"valid": False, "error": str(exc), "seconds": time.monotonic() - started}
         expected, exact = judge(self.schema, feln, self.gold.lookup(query))
@@ -74,6 +85,7 @@ class Studio:
             "valid": True,
             "feln": feln,
             "raw": result["raw"],
+            "attempts": attempts,
             "seconds": time.monotonic() - started,
             "first_token_seconds": result.get("first_token_seconds"),
             "prompt_tokens": result.get("prompt_tokens"),
@@ -237,6 +249,7 @@ def build(args: argparse.Namespace) -> Studio:
                 args.liquid_system,
                 args.liquid_adapter,
                 args.liquid_url,
+                args.liquid_guard,
             )
             if args.start:
                 launch(
@@ -315,7 +328,9 @@ def main():
     lora = parser.add_argument_group("lora (feln-lora GGUF via llama-server)")
     lora.add_argument("--lora-label", default="Nemotron-3-Nano-4B · LoRA v2 · Q8_0")
     lora.add_argument(
-        "--lora-bundle", type=Path, default=SIBLINGS / "feln-lora/runs/nemotron-mac-v2-20260916/lora/merged"
+        "--lora-bundle",
+        type=Path,
+        default=SIBLINGS / "feln-lora/runs/nemotron-mac-v2-20260916/lora/merged",
     )
     lora.add_argument(
         "--lora-gguf",
@@ -340,6 +355,12 @@ def main():
         default=SIBLINGS / "feln-liquid/artifacts/northsea-normalized-20260916/system.txt",
     )
     liquid.add_argument("--liquid-url", default="http://127.0.0.1:8093")
+    liquid.add_argument(
+        "--liquid-guard",
+        type=Path,
+        default=SIBLINGS / "feln-liquid/predict_feln.py",
+        help="feln-liquid guard module (RULES, clarification, retry); a missing file disables it",
+    )
     rag = parser.add_argument_group("rag (feln-rag few-shot via litellm)")
     rag.add_argument("--rag-label", default="RAG · few-shot")
     rag.add_argument("--rag-model", default=os.environ.get("LLM_MODEL_NAME"))

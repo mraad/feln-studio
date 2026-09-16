@@ -5,8 +5,11 @@ FELN Studio: one vanilla-JS SPA and loopback HTTP server over every sibling FELN
 `../feln-rag` few-shot via litellm). README.md has commands; `tasks/todo.md` the roadmap.
 
 - Backends implement `feln_studio.backends.Backend.generate(query, prompt, ids)` and return
-  `{raw, parsed}` only. Compilation (`catalog.Schema`) and judging (`catalog.judge`, `FELN.same`)
-  live in the server so every backend is scored identically. Never compare inside a backend.
+  `{raw}` only. Parsing, compilation (`catalog.Schema`) and judging (`catalog.judge`,
+  `FELN.same`) live in the server so every backend is scored identically; `retry(...)` gives a
+  backend one corrected turn after a validation error. Never compare inside a backend.
+- The liquid backend imports `../feln-liquid/predict_feln.py` by path (`--liquid-guard`) for its
+  inference RULES, depth clarification and retry. Change guard behaviour there, not here.
 - `catalog.Schema` is a copy of `feln-lora/src/feln_data.Schema`; feln-lora is not installable.
   Fix bugs in both until it is.
 - Default data is `../feln-rag/feln_rag/data/NorthSea` (public). No personal filesystem paths in

@@ -55,8 +55,18 @@ class Fake(backends.Backend):
             raise ValueError("Model reached its output limit")
         if query == "boom":
             raise RuntimeError("secret-provider-detail")
+        if query == "deep":
+            raise backends.Clarification("Do you mean water depth?")
+        if query in ("bad", "bad-twice"):
+            return {"raw": '{"layers": ["Wells"], "where": ["nope = 1"], "relations": []}'}
         raw = '{"layers": ["wells"], "where": ["content_type = \'Gas\'"], "relations": []}'
-        return {"raw": raw, "parsed": json.loads(raw), "generated_tokens": 5}
+        return {"raw": raw, "generated_tokens": 5}
+
+    def retry(self, query, prompt, raw, error, ids):
+        self.calls.append(("retry", error))
+        if query == "bad-twice":
+            return {"raw": "not json"}
+        return {"raw": '{"layers": ["Wells"], "where": ["content_type = 2"], "relations": []}'}
 
 
 @pytest.fixture
@@ -159,3 +169,32 @@ def test_parse_json_tolerates_fences_and_chatter():
     for bad in ("no json here", "[1, 2]", '{"a": '):
         with pytest.raises(ValueError):
             backends.parse_json(bad)
+
+
+def test_retry_and_clarification(studio):
+    app, call = studio
+    status, result = call("/api/generate", {"query": "bad", "backend": "lora"})
+    assert status == 200 and result["valid"] and result["attempts"] == 2
+    assert "Unknown field Wells" in app.backends["lora"].calls[-1][1]
+    status, result = call("/api/generate", {"query": "bad-twice", "backend": "lora"})
+    assert status == 200 and not result["valid"] and "JSON" in result["error"]
+    status, result = call("/api/generate", {"query": "deep", "backend": "lora"})
+    assert status == 200 and not result["valid"] and result["clarification"]
+    assert result["error"] == "Do you mean water depth?"
+    # A backend without retry() surfaces the first validation error.
+    app.backends["rag"].retry = lambda *a: None
+    status, result = call(
+        "/api/generate", {"query": "bad", "backend": "rag", "ids": [0, 1, 2, 3, 4]}
+    )
+    assert status == 200 and not result["valid"] and "Unknown field" in result["error"]
+
+
+def test_load_guard_from_sibling(tmp_path):
+    assert backends.load_guard(tmp_path / "missing.py") is None
+    guard = tmp_path / "guard.py"
+    guard.write_text(
+        'RULES = "R"\n\ndef clarification(text):\n    return "ask" if "depth" in text else None\n'
+    )
+    module = backends.load_guard(guard)
+    assert module is not None
+    assert module.RULES == "R" and module.clarification("depth") == "ask"
