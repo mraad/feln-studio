@@ -26,7 +26,7 @@ Open <http://127.0.0.1:8766/>. `--start` launches `llama-server` (port 8092) and
 Without `--start`, run them yourself:
 
 ```bash
-llama-server -m ../feln-lora/runs/nemotron-mac-20260915/gguf/nemotron-4b-step443-q8_0.gguf \
+llama-server -m ../feln-lora/runs/nemotron-mac-v2-20260916/lora/gguf/nemotron-4b-v2-lora-q8_0.gguf \
   -c 2048 -np 1 -ngl all --host 127.0.0.1 --port 8092
 mlx_lm.server --model ../feln-liquid/models/LFM2.5-1.2B-Instruct \
   --adapter-path ../feln-liquid/artifacts/northsea-normalized-20260916/best --port 8093
