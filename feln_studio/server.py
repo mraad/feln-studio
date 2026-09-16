@@ -326,17 +326,17 @@ def main():
         help="another GGUF bundle (inference_config.json) served by llama-server at URL",
     )
     lora = parser.add_argument_group("lora (feln-lora GGUF via llama-server)")
-    lora.add_argument("--lora-label", default="Nemotron-3-Nano-4B · LoRA v2 · Q8_0")
+    lora.add_argument("--lora-label", default="Nemotron-3-Nano-4B · QLoRA v2 · Q8_0")
     lora.add_argument(
         "--lora-bundle",
         type=Path,
-        default=SIBLINGS / "feln-lora/runs/nemotron-mac-v2-20260916/lora/merged",
+        default=SIBLINGS / "feln-lora/runs/nemotron-mac-v2-20260916/qlora/merged",
     )
     lora.add_argument(
         "--lora-gguf",
         type=Path,
         default=SIBLINGS
-        / "feln-lora/runs/nemotron-mac-v2-20260916/lora/gguf/nemotron-4b-v2-lora-q8_0.gguf",
+        / "feln-lora/runs/nemotron-mac-v2-20260916/qlora/gguf/nemotron-4b-v2-qlora-q8_0.gguf",
     )
     lora.add_argument("--lora-url", default="http://127.0.0.1:8092")
     liquid = parser.add_argument_group("liquid (feln-liquid MLX adapter via mlx_lm.server)")

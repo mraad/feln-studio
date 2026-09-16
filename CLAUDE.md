@@ -12,7 +12,7 @@ FELN Studio: one vanilla-JS SPA and loopback HTTP server over every sibling FELN
   inference RULES, depth clarification and retry. Change guard behaviour there, not here.
 - `catalog.Schema` is a copy of `feln-lora/src/feln_data.Schema`; feln-lora is not installable.
   Fix bugs in both until it is.
-- Default model paths in `server.py` `main()` track the sibling READMEs (feln-lora v2 LoRA,
+- Default model paths in `server.py` `main()` track the sibling READMEs (feln-lora v2 QLoRA,
   feln-liquid `northsea-normalized-20260916`); bump them and the README table together.
 - Default data is `../feln-rag/feln_rag/data/NorthSea` (public). No personal filesystem paths in
   code or docs; `.env` (git-ignored) carries `LLM_MODEL_NAME` and `MLX_SERVER`.
